@@ -3,6 +3,7 @@ import pandas as pd
 from data import jobs, candidates
 from analytics import HiringAnalytics
 from matcher import auto_screen_candidates, rank_candidates_for_job, calculate_match_score
+from email_notifications import EmailNotifier, MockEmailNotifier
 
 # Page configuration
 st.set_page_config(
@@ -24,7 +25,8 @@ st.sidebar.title("Navigation")
 # In the sidebar navigation, add:
 page = st.sidebar.radio(
     "Go to:",
-    ["📊 Hiring Dashboard", "🤖 AI Candidate Screening", "📝 Job Management", "📈 Detailed Analytics", "📄 CV Upload & Parse"]
+    ["📊 Hiring Dashboard", "🤖 AI Candidate Screening", "📝 Job Management", 
+     "📈 Detailed Analytics", "📄 CV Upload & Parse", "📧 Email Notifications"]
 )
 
 # ==================== PAGE 1: HIRING DASHBOARD ====================
@@ -405,6 +407,153 @@ elif page == "📄 CV Upload & Parse":
         - PDF (.pdf)
         - Microsoft Word (.docx)
         """)
+
+# ==================== PAGE 6: EMAIL NOTIFICATIONS ====================
+elif page == "📧 Email Notifications":
+    st.header("📧 Automated Email Notifications")
+    st.markdown("Send automated responses to candidates based on screening results")
+    
+    # Email configuration
+    with st.expander("⚙️ Email Configuration", expanded=False):
+        st.warning("⚠️ For demo purposes, using mock email mode. In production, add your SMTP credentials.")
+        
+        use_mock = st.checkbox("Use Demo Mode (no actual emails sent)", value=True)
+        
+        if not use_mock:
+            smtp_server = st.text_input("SMTP Server", value="smtp.gmail.com")
+            smtp_port = st.number_input("SMTP Port", value=587)
+            sender_email = st.text_input("Sender Email")
+            sender_password = st.text_input("Password", type="password")
+            
+            if st.button("Save Configuration"):
+                st.session_state['email_configured'] = True
+                st.session_state['smtp_server'] = smtp_server
+                st.session_state['smtp_port'] = smtp_port
+                st.session_state['sender_email'] = sender_email
+                st.success("Configuration saved!")
+    
+    # Select candidates to notify
+    st.subheader("📋 Select Candidates")
+    
+    # Filter candidates
+    all_candidates_with_scores = []
+    for candidate in candidates:
+        job = jobs.get(candidate.get('job_id', 1))
+        if job:
+            from matcher import calculate_match_score
+            match = calculate_match_score(candidate, job)
+            candidate_with_score = candidate.copy()
+            candidate_with_score['match_score'] = match['score']
+            candidate_with_score['job_title'] = job['title']
+            all_candidates_with_scores.append(candidate_with_score)
+    
+    # Create dataframe for selection
+    df_candidates = pd.DataFrame(all_candidates_with_scores)
+    
+    if not df_candidates.empty:
+        # Multi-select candidates
+        selected_indices = st.multiselect(
+            "Select candidates to notify",
+            options=range(len(df_candidates)),
+            format_func=lambda i: f"{df_candidates.iloc[i]['name']} - {df_candidates.iloc[i]['job_title']} (Score: {df_candidates.iloc[i]['match_score']}%)"
+        )
+        
+        if selected_indices:
+            selected_candidates = df_candidates.iloc[selected_indices].to_dict('records')
+            
+            # Add email field (mock for demo)
+            for c in selected_candidates:
+                if 'email' not in c:
+                    # Generate mock email for demo
+                    c['email'] = f"{c['name'].lower().replace(' ', '.')}@example.com"
+            
+            st.subheader("✉️ Compose Notification")
+            
+            notification_type = st.radio(
+                "Notification Type",
+                ["📝 Shortlisted (Interview Invitation)", "❌ Rejected", "⏳ Application Received"]
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                job_title = st.text_input("Job Title", value=selected_candidates[0]['job_title'] if selected_candidates else "")
+            with col2:
+                if "Shortlisted" in notification_type:
+                    interview_date = st.text_input("Interview Date & Time", placeholder="e.g., April 15, 2026 at 2:00 PM")
+            
+            # Preview recipients
+            st.markdown("**Recipients:**")
+            for c in selected_candidates:
+                st.markdown(f"- {c['name']} ({c['email']}) - Match Score: {c['match_score']}%")
+            
+            # Send button
+            if st.button("📧 Send Notifications", type="primary"):
+                if use_mock:
+                    notifier = MockEmailNotifier()
+                else:
+                    from email_notifications import EmailNotifier
+                    notifier = EmailNotifier()
+                    if hasattr(st.session_state, 'email_configured'):
+                        notifier.configure(
+                            st.session_state.get('sender_email', ''),
+                            st.session_state.get('sender_password', '')
+                        )
+                
+                # Determine status based on notification type
+                if "Shortlisted" in notification_type:
+                    status = "shortlisted"
+                elif "Rejected" in notification_type:
+                    status = "rejected"
+                else:
+                    status = "screening"
+                
+                # Send emails
+                with st.spinner("Sending notifications..."):
+                    for candidate in selected_candidates:
+                        if "Shortlisted" in notification_type:
+                            notifier.send_candidate_response(
+                                candidate['email'],
+                                candidate['name'],
+                                job_title,
+                                candidate['match_score'],
+                                status,
+                                interview_date if 'interview_date' in locals() else None # type: ignore
+                            )
+                        else:
+                            notifier.send_candidate_response(
+                                candidate['email'],
+                                candidate['name'],
+                                job_title,
+                                candidate['match_score'],
+                                status
+                            )
+                    
+                    st.success(f"✅ Notifications sent to {len(selected_candidates)} candidates!")
+                    
+                    # Log to session
+                    if 'email_log' not in st.session_state:
+                        st.session_state.email_log = []
+                    
+                    for c in selected_candidates:
+                        st.session_state.email_log.append({
+                            "candidate": c['name'],
+                            "email": c['email'],
+                            "status": status,
+                            "timestamp": pd.Timestamp.now()
+                        })
+    
+    else:
+        st.info("No candidates found. Upload CVs or add candidates first.")
+    
+    # Email log
+    if 'email_log' in st.session_state and st.session_state.email_log:
+        st.subheader("📜 Notification Log")
+        df_log = pd.DataFrame(st.session_state.email_log)
+        st.dataframe(df_log, use_container_width=True)
+        
+        if st.button("Clear Log"):
+            st.session_state.email_log = []
+            st.rerun()
 
 st.markdown("---")
 st.caption("🎯 AI-Powered Recruitment Platform | Automated Screening & Analytics")
