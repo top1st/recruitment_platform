@@ -21,9 +21,10 @@ st.markdown("---")
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
+# In the sidebar navigation, add:
 page = st.sidebar.radio(
     "Go to:",
-    ["📊 Hiring Dashboard", "🤖 AI Candidate Screening", "📝 Job Management", "📈 Detailed Analytics"]
+    ["📊 Hiring Dashboard", "🤖 AI Candidate Screening", "📝 Job Management", "📈 Detailed Analytics", "📄 CV Upload & Parse"]
 )
 
 # ==================== PAGE 1: HIRING DASHBOARD ====================
@@ -224,7 +225,7 @@ elif page == "📝 Job Management":
                 st.rerun()
 
 # ==================== PAGE 4: DETAILED ANALYTICS ====================
-else:
+elif page == "📈 Detailed Analytics":
     st.header("📈 Detailed Hiring Analytics")
     
     # Source breakdown
@@ -278,6 +279,132 @@ else:
             file_name="recruitment_report.csv",
             mime="text/csv"
         )
+
+# ==================== PAGE 5: CV UPLOAD & PARSE ====================
+elif page == "📄 CV Upload & Parse":
+    st.header("📄 AI-Powered CV Parsing")
+    st.markdown("Upload CVs (PDF or DOCX) to automatically extract skills and experience")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        uploaded_file = st.file_uploader(
+            "Choose a CV file",
+            type=['pdf', 'docx'],
+            help="Upload PDF or DOCX format"
+        )
+        
+        if uploaded_file:
+            candidate_name = st.text_input("Candidate Name (optional)", placeholder="Auto-extracted if left blank")
+            
+            # Select job to match against
+            job_options = {job["title"]: job_id for job_id, job in jobs.items()}
+            selected_job_title = st.selectbox("Match against job:", list(job_options.keys()))
+            selected_job_id = job_options[selected_job_title]
+            selected_job = jobs[selected_job_id]
+            
+            if st.button("🔍 Parse & Analyze CV", type="primary"):
+                with st.spinner("Parsing CV and extracting information..."):
+                    try:
+                        # Parse CV
+                        from cv_parser import parse_cv
+                        parsed_data = parse_cv(uploaded_file, candidate_name if candidate_name else None) # type: ignore
+                        
+                        # Calculate match score
+                        from matcher import calculate_match_score
+                        temp_candidate = {
+                            "skills": parsed_data["skills"],
+                            "exp": parsed_data["experience_years"]
+                        }
+                        match_result = calculate_match_score(temp_candidate, selected_job)
+                        
+                        # Display results
+                        st.success("✅ CV parsed successfully!")
+                        
+                        # Candidate info
+                        st.subheader("📋 Extracted Information")
+                        info_col1, info_col2, info_col3 = st.columns(3)
+                        with info_col1:
+                            st.metric("Candidate Name", parsed_data["name"])
+                        with info_col2:
+                            st.metric("Experience", f"{parsed_data['experience_years']} years")
+                        with info_col3:
+                            st.metric("Match Score", f"{match_result['score']}%")
+                        
+                        # Skills
+                        st.subheader("🛠️ Extracted Skills")
+                        if parsed_data["skills"]:
+                            skills_text = ", ".join(parsed_data["skills"])
+                            st.success(skills_text)
+                        else:
+                            st.warning("No skills detected. Consider adding skills explicitly in CV.")
+                        
+                        # Match analysis
+                        st.subheader("🎯 Job Match Analysis")
+                        st.markdown(f"**Job:** {selected_job['title']}")
+                        st.markdown(f"**Required Skills:** {', '.join(selected_job['required_skills'])}")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**✅ Matched Skills**")
+                            if match_result['matched_skills']:
+                                for skill in match_result['matched_skills']:
+                                    st.markdown(f"- {skill}")
+                            else:
+                                st.markdown("*No matched skills*")
+                        
+                        with col2:
+                            st.markdown("**❌ Missing Skills**")
+                            if match_result['missing_skills']:
+                                for skill in match_result['missing_skills']:
+                                    st.markdown(f"- {skill}")
+                            else:
+                                st.markdown("*All skills matched!*")
+                        
+                        st.info(f"**Recommendation:** {match_result['reason']}")
+                        
+                        # Option to add to database
+                        st.subheader("💾 Add to Candidate Database")
+                        if st.button("Add to Platform"):
+                            new_id = max([c["id"] for c in candidates]) + 1
+                            new_candidate = {
+                                "id": new_id,
+                                "name": parsed_data["name"],
+                                "source": "external",  # Default to external for uploaded CVs
+                                "skills": parsed_data["skills"],
+                                "exp": parsed_data["experience_years"],
+                                "job_id": selected_job_id,
+                                "status": "screened",  # Auto-screened
+                                "agency_name": None
+                            }
+                            candidates.append(new_candidate)
+                            st.success(f"✅ {parsed_data['name']} added to candidate database with {match_result['score']}% match score!")
+                            
+                            # Show preview of parsed text
+                            with st.expander("📄 CV Text Preview"):
+                                st.text(parsed_data["full_text"])
+                    
+                    except Exception as e:
+                        st.error(f"Error parsing CV: {str(e)}")
+    
+    with col2:
+        st.markdown("### 📝 Instructions")
+        st.markdown("""
+        1. Upload a CV (PDF or DOCX)
+        2. Enter candidate name (optional)
+        3. Select target job
+        4. Click 'Parse & Analyze CV'
+        
+        **What we extract:**
+        - Candidate name
+        - Technical skills
+        - Years of experience
+        - Job match score
+        
+        **Supported formats:**
+        - PDF (.pdf)
+        - Microsoft Word (.docx)
+        """)
 
 st.markdown("---")
 st.caption("🎯 AI-Powered Recruitment Platform | Automated Screening & Analytics")
