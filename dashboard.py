@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import streamlit as st
 import pandas as pd
 from data import jobs, candidates
@@ -26,7 +28,8 @@ st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to:",
     ["📊 Hiring Dashboard", "🤖 AI Candidate Screening", "📝 Job Management", 
-     "📈 Detailed Analytics", "📄 CV Upload & Parse", "📧 Email Notifications"]
+     "📈 Detailed Analytics", "📄 CV Upload & Parse", "📧 Email Notifications", 
+     "📊 Reports & Export"]
 )
 
 # ==================== PAGE 1: HIRING DASHBOARD ====================
@@ -555,5 +558,140 @@ elif page == "📧 Email Notifications":
             st.session_state.email_log = []
             st.rerun()
 
+# ==================== PAGE 7: REPORTS & EXPORT ====================
+elif page == "📊 Reports & Export":
+    st.header("📊 Advanced Reports & Data Export")
+    
+    from reporting import RecruitmentReporter, create_timeline_chart
+    
+    reporter = RecruitmentReporter(candidates, jobs, analytics)
+    
+    # Tab layout
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 Interactive Charts", "📥 Export Data", "📄 PDF Report", "📊 Custom Reports"])
+    
+    with tab1:
+        st.subheader("Interactive Analytics Dashboard")
+        
+        charts = reporter.create_advanced_charts()
+        
+        # Display charts
+        col1, col2 = st.columns(2)
+        with col1:
+            if charts['funnel']:
+                st.plotly_chart(charts['funnel'], use_container_width=True)
+        with col2:
+            if charts['department']:
+                st.plotly_chart(charts['department'], use_container_width=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if charts['scores']:
+                st.plotly_chart(charts['scores'], use_container_width=True)
+        with col2:
+            if charts['heatmap']:
+                st.plotly_chart(charts['heatmap'], use_container_width=True)
+        
+        # Timeline chart
+        st.subheader("Hiring Timeline")
+        timeline_fig = create_timeline_chart(candidates)
+        st.plotly_chart(timeline_fig, use_container_width=True)
+    
+    with tab2:
+        st.subheader("Export Data to Excel")
+        st.markdown("Download complete recruitment data in Excel format with multiple sheets.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📥 Generate Excel Report", type="primary"):
+                with st.spinner("Generating Excel file..."):
+                    excel_data = reporter.export_to_excel()
+                    st.download_button(
+                        label="💾 Download Excel File",
+                        data=excel_data,
+                        file_name=f"recruitment_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    st.success("Excel report ready!")
+        
+        with col2:
+            # Quick CSV export
+            df_candidates = pd.DataFrame(candidates)
+            csv = df_candidates.to_csv(index=False)
+            st.download_button(
+                label="📄 Download CSV (Candidates only)",
+                data=csv,
+                file_name="candidates.csv",
+                mime="text/csv"
+            )
+    
+    with tab3:
+        st.subheader("Generate PDF Report")
+        st.markdown("Create a professional PDF dashboard for presentations and sharing.")
+        
+        if st.button("📄 Generate PDF Report", type="primary"):
+            with st.spinner("Creating PDF report..."):
+                pdf_data = reporter.generate_pdf_report()
+                st.download_button(
+                    label="💾 Download PDF Report",
+                    data=pdf_data,
+                    file_name=f"recruitment_dashboard_{datetime.now().strftime('%Y%m%d')}.pdf", 
+                    mime="application/pdf"
+                )
+                st.success("PDF report generated successfully!")
+        
+        st.info("💡 The PDF report includes: Summary metrics, department breakdown, and key performance indicators.")
+    
+    with tab4:
+        st.subheader("Custom Report Builder")
+        st.markdown("Build custom reports by selecting specific metrics.")
+        
+        # Metric selection
+        available_metrics = {
+            "Internal Metrics": ["applications", "hires", "conversion"],
+            "External Metrics": ["applications", "hires", "conversion"],
+            "Referral Metrics": ["total_referrals", "successful", "conversion"],
+            "Agency Metrics": ["agencies", "proposed_candidates", "successful_placements", "placement_rate"]
+        }
+        
+        selected_metrics = st.multiselect(
+            "Select metrics to include in report:",
+            options=[f"{category}: {metric}" for category, metrics in available_metrics.items() for metric in metrics]
+        )
+        
+        if selected_metrics:
+            st.subheader("Custom Report Preview")
+            report_data = {}
+            
+            internal = analytics.get_internal_metrics()
+            external = analytics.get_external_metrics()
+            referrals = analytics.get_referral_metrics()
+            agency = analytics.get_agency_metrics()
+            
+            for metric in selected_metrics:
+                if "Internal" in metric:
+                    key = metric.split(": ")[1]
+                    report_data[metric] = internal.get(key, "N/A")
+                elif "External" in metric:
+                    key = metric.split(": ")[1]
+                    report_data[metric] = external.get(key, "N/A")
+                elif "Referral" in metric:
+                    key = metric.split(": ")[1]
+                    report_data[metric] = referrals.get(key, "N/A")
+                elif "Agency" in metric:
+                    key = metric.split(": ")[1]
+                    report_data[metric] = agency.get(key, "N/A")
+            
+            df_report = pd.DataFrame(list(report_data.items()), columns=["Metric", "Value"])
+            st.dataframe(df_report, use_container_width=True)
+            
+            # Export custom report
+            csv_custom = df_report.to_csv(index=False)
+            st.download_button(
+                label="Download Custom Report (CSV)",
+                data=csv_custom,
+                file_name="custom_report.csv",
+                mime="text/csv"
+            )
+            
 st.markdown("---")
 st.caption("🎯 AI-Powered Recruitment Platform | Automated Screening & Analytics")
