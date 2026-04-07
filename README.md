@@ -273,3 +273,58 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Run the application
 ENTRYPOINT ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+```
+
+🚀 Build & Run Commands
+
+Build the Docker image:
+
+```docker build -t recruitment-platform:latest .```
+
+Run the container:
+
+```docker run -d -p 8501:8501 --name recruitment-app recruitment-platform:latest```
+
+View logs:
+```docker logs -f recruitment-app```
+
+Stop the container:
+```docker stop recruitment-app```
+
+Remove the container:
+```docker rm recruitment-app```
+
+Run with docker-compose:
+```docker-compose up -d```
+
+Check container health:
+```
+docker ps
+docker inspect recruitment-app
+```
+
+🧪 Test the Docker image locally
+
+```
+# Build
+docker build -t recruitment-test .
+
+# Run
+docker run -p 8501:8501 recruitment-test
+
+# Test with curl
+curl http://localhost:8501
+```
+
+📦 Push to Docker Hub
+
+```
+# Tag the image
+docker tag recruitment-platform:latest yourusername/recruitment-platform:latest
+
+# Login to Docker Hub
+docker login
+
+# Push
+docker push yourusername/recruitment-platform:latest
+```
